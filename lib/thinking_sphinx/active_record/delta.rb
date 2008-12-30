@@ -51,7 +51,7 @@ module ThinkingSphinx
               client.update(
                 "#{self.sphinx_indexes.first.name}_core",
                 ['sphinx_deleted'],
-                {instance.sphinx_document_id => 1}
+                {instance.sphinx_document_id => [1]}
               ) if instance && instance.in_core_index?
               
               output = `#{config.bin_path}indexer --config #{config.config_file} --rotate #{self.sphinx_indexes.first.name}_delta`
