@@ -5,7 +5,7 @@ module ThinkingSphinx
       
       def initialize(index, options)
         @index  = index
-        @column = options.delete(:column) || :delta
+        @column = options.delete(:delta_column) || :delta
       end
       
       def index(model, instance = nil)
@@ -31,6 +31,10 @@ module ThinkingSphinx
         instance.delta = true
       end
       
+      def reset_query(model)
+        "UPDATE #{model.quoted_table_name} SET #{clause(model, false)}"
+      end
+      
       def clause(model, toggled)
         "#{model.quoted_table_name}.#{@index.quote_column(@column.to_s)}" +
         " = #{@index.db_boolean(toggled)}"
@@ -44,7 +48,7 @@ module ThinkingSphinx
       
       def delta_index_name(model)
         "#{model.source_of_sphinx_index.name.underscore.tr(':/\\', '_')}_delta"
-      end
+      end      
     end
   end
 end
