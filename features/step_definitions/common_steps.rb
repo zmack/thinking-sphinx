@@ -31,7 +31,7 @@ When /^I search for (\w+)$/ do |query|
   @query = query
 end
 
-When /^I search for "([^\"]+)"$/ do |query|
+When /^I search for "([^\"]*)"$/ do |query|
   @results = nil
   @query = query
 end
