@@ -27,6 +27,10 @@ When /^I am retrieving the result count$/ do
   @method = @model ? :search_count : :count
 end
 
+When /^I search$/ do
+  @results = nil
+end
+
 When /^I search for (\w+)$/ do |query|
   @results = nil
   @query = query
