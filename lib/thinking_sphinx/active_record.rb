@@ -163,7 +163,29 @@ module ThinkingSphinx
             
             names
           end
-          
+
+          def sphinx_indexed_fields
+            return [] if self.sphinx_indexes.empty?
+
+            self.sphinx_indexes.first.fields.map { |f| f.unique_name }
+          end
+
+          # Returns the symbols of the fields matching the bitmask.
+          #
+          # The main use case is when doing a search with :rank_mode => :fieldmask
+          # This returns a bit mask containing the fields that matched the query. 
+          def sphinx_matching_fields(bitmask)
+            return [] if bitmask.nil? || bitmask == 0
+
+            fields = []
+
+            sphinx_indexed_fields.each_with_index do |item, index|
+              fields << item unless ( (2 ** index) & bitmask ) == 0
+            end
+
+            fields
+          end
+
           private
           
           def sphinx_delta?

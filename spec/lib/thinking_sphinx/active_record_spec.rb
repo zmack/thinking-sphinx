@@ -350,4 +350,19 @@ describe ThinkingSphinx::ActiveRecord do
       Parent.sphinx_index_names.should == ['person_core', 'person_delta']
     end
   end
+
+  describe '.sphinx_indexed_fields' do
+    it 'should return the indexed fields' do
+      Person.sphinx_indexed_fields.should == [:name, :team_name, :phone_numbers, :city, :state]
+    end
+  end
+
+  describe '.sphinx_matching_fields' do
+    it 'should return the matching fields from a sphinx bitmask' do
+      Person.sphinx_matching_fields(9).should == [:name, :city]
+      Person.sphinx_matching_fields(7).should == [:name, :team_name, :phone_numbers]
+      Person.sphinx_matching_fields(1).should == [:name]
+    end
+
+  end
 end
