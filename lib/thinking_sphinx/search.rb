@@ -305,6 +305,9 @@ module ThinkingSphinx
         # puts "value: #{value.inspect}"
         client.send("#{key}=", value) if value
       end
+
+      # treated non-standard as :select is already used for AR queries
+      client.select = options[:sph_select] if options[:sph_select]
       
       client.limit      = per_page
       client.offset     = offset
