@@ -1,12 +1,14 @@
 $:.unshift File.dirname(__FILE__) + '/../lib'
+Dir[File.join(File.dirname(__FILE__), '../vendor/*/lib')].each do |path|
+  $:.unshift path
+end
 
 require 'rubygems'
 require 'fileutils'
 require 'ginger'
 require 'jeweler'
 
-SphinxVersion = ENV['VERSION'] || '0.9.8'
-require "lib/thinking_sphinx/#{SphinxVersion}"
+require "lib/thinking_sphinx"
 
 require 'will_paginate'
 
@@ -25,6 +27,7 @@ Spec::Runner.configure do |config|
   sphinx.setup_mysql
   
   require 'spec/fixtures/models'
+  ThinkingSphinx.context.define_indexes
   
   config.before :all do
     %w( tmp tmp/config tmp/log tmp/db ).each do |path|
@@ -37,13 +40,6 @@ Spec::Runner.configure do |config|
     
     ThinkingSphinx::Configuration.instance.reset
     ThinkingSphinx::Configuration.instance.database_yml_file = "spec/fixtures/sphinx/database.yml"
-    
-    # Ensure after_commit plugin is loaded correctly
-    Object.subclasses_of(ActiveRecord::ConnectionAdapters::AbstractAdapter).each { |klass|
-      unless klass.ancestors.include?(AfterCommit::ConnectionAdapters)
-        klass.send(:include, AfterCommit::ConnectionAdapters)
-      end
-    }
   end
   
   config.after :all do
@@ -54,6 +50,7 @@ end
 def minimal_result_hashes(*instances)
   instances.collect do |instance|
     {
+      :weight     => 21,
       :attributes => {
         'sphinx_internal_id' => instance.id,
         'class_crc'          => instance.class.name.to_crc32

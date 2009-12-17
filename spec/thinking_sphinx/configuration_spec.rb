@@ -3,8 +3,8 @@ require 'spec/spec_helper'
 describe ThinkingSphinx::Configuration do
   describe "environment class method" do
     before :each do
-      ThinkingSphinx::Configuration.send(:class_variable_set, :@@environment, nil)
-
+      Thread.current[:thinking_sphinx_environment] = nil
+      
       ENV["RAILS_ENV"] = nil
     end
 
@@ -50,7 +50,8 @@ describe ThinkingSphinx::Configuration do
           "charset_table"     => "table",
           "ignore_chars"      => "e",
           "searchd_binary_name" => "sphinx-searchd",
-          "indexer_binary_name" => "sphinx-indexer"
+          "indexer_binary_name" => "sphinx-indexer",
+          "index_exact_words" => true
         }
       }
 
@@ -129,65 +130,11 @@ describe ThinkingSphinx::Configuration do
     end
   end
 
-  describe "#load_models" do
-    before :each do
-      @config = ThinkingSphinx::Configuration.instance
-      @config.model_directories = ['']
-
-      @file_name        = 'a.rb'
-      @model_name_lower = 'a'
-      @class_name       = 'A'
-
-      @file_name.stub!(:gsub).and_return(@model_name_lower)
-      @model_name_lower.stub!(:camelize).and_return(@class_name)
-      Dir.stub(:[]).and_return([@file_name])
-    end
-
-    it "should load the files by guessing the file name" do
-      @class_name.should_receive(:constantize).and_return(true)
-
-      @config.load_models
-    end
-
-    it "should not raise errors if the model name is nil" do
-      @file_name.stub!(:gsub).and_return(nil)
-
-      lambda {
-        @config.load_models
-      }.should_not raise_error
-    end
-
-    it "should not raise errors if the file name does not represent a class name" do
-      @class_name.should_receive(:constantize).and_raise(NameError)
-
-      lambda {
-        @config.load_models
-      }.should_not raise_error
-    end
-
-    it "should retry if the first pass fails and contains a directory" do
-      @model_name_lower.stub!(:gsub!).and_return(true, nil)
-      @class_name.stub(:constantize).and_raise(LoadError)
-      @model_name_lower.should_receive(:camelize).twice
-
-      lambda {
-        @config.load_models
-      }.should_not raise_error
-    end
-
-    it "should catch database errors with a warning" do
-      @class_name.should_receive(:constantize).and_raise(Mysql::Error)
-      @config.should_receive(:puts).with('Warning: Error loading a.rb')
-
-      lambda {
-        @config.load_models
-      }.should_not raise_error
-    end
-  end
-
   it "should insert set index options into the configuration file" do
     config = ThinkingSphinx::Configuration.instance
+    
     ThinkingSphinx::Configuration::IndexOptions.each do |option|
+      config.reset
       config.index_options[option.to_sym] = "something"
       config.build
 
@@ -200,15 +147,34 @@ describe ThinkingSphinx::Configuration do
 
   it "should insert set source options into the configuration file" do
     config = ThinkingSphinx::Configuration.instance
+    config.reset
+    
+    config.source_options[:sql_query_pre] = ["something"]
     ThinkingSphinx::Configuration::SourceOptions.each do |option|
-      config.source_options[option.to_sym] = "something"
+      config.source_options[option.to_sym] ||= "something"
       config.build
 
       file = open(config.config_file) { |f| f.read }
       file.should match(/#{option}\s+= something/)
 
-      config.source_options[option.to_sym] = nil
+      config.source_options.delete option.to_sym
     end
+    
+    config.source_options[:sql_query_pre] = nil  
+  end
+  
+  it "should not blow away delta or utf options if sql pre is specified in config" do
+    config = ThinkingSphinx::Configuration.instance
+    config.reset
+    
+    config.source_options[:sql_query_pre] = ["a pre query"]
+    config.build
+    file = open(config.config_file) { |f| f.read }
+    
+    file.should match(/sql_query_pre = a pre query\n\s*sql_query_pre = UPDATE `\w+` SET `delta` = 0 WHERE `delta` = 1/im)
+    file.should match(/sql_query_pre = a pre query\n\s*sql_query_pre = \n/im)
+    
+    config.source_options[:sql_query_pre] = nil
   end
 
   it "should set any explicit prefixed or infixed fields" do

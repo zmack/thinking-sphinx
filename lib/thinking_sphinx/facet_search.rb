@@ -3,6 +3,8 @@ module ThinkingSphinx
     attr_accessor :args, :options
     
     def initialize(*args)
+      ThinkingSphinx.context.define_indexes
+      
       @options      = args.extract_options!
       @args         = args
       
@@ -64,7 +66,7 @@ module ThinkingSphinx
     
     def facet_classes
       (
-        options[:classes] || ThinkingSphinx.indexed_models.collect { |model|
+        options[:classes] || ThinkingSphinx.context.indexed_models.collect { |model|
           model.constantize
         }
       ).select { |klass| klass.sphinx_facets.any? }

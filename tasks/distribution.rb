@@ -20,7 +20,7 @@ Jeweler::Tasks.new do |gem|
     "README.textile",
     "tasks/**/*.rb",
     "tasks/**/*.rake",
-    "VERSION.yml"
+    "VERSION"
   ]
   gem.test_files = FileList[
     "features/**/*",
@@ -28,8 +28,8 @@ Jeweler::Tasks.new do |gem|
   ]
   
   gem.add_dependency 'activerecord', '>= 1.15.6'
-  gem.add_dependency 'riddle',       '>= 1.0.0'
-  gem.add_dependency 'after_commit', '>= 1.0.0'
+  gem.add_dependency 'riddle',       '>= 1.0.8'
+  gem.add_dependency 'after_commit', '>= 1.0.5'
   
   gem.post_install_message = <<-MESSAGE
 If you're upgrading, you should read this:

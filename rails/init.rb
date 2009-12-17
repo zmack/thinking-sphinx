@@ -1,4 +1,8 @@
-require 'thinking_sphinx/0.9.8'
+Dir[File.join(File.dirname(__FILE__), '../vendor/*/lib')].each do |path|
+  $LOAD_PATH.unshift path
+end
+
+require 'thinking_sphinx'
 require 'action_controller/dispatcher'
 
 ActionController::Dispatcher.to_prepare :thinking_sphinx do
@@ -9,6 +13,4 @@ ActionController::Dispatcher.to_prepare :thinking_sphinx do
   elsif Rails::VERSION::STRING.to_f > 2.1
     I18n.backend.load_translations(*I18n.load_path)
   end
-  
-  ThinkingSphinx::Configuration.instance.load_models
 end

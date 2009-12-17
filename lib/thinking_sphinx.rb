@@ -1,12 +1,10 @@
-Dir[File.join(File.dirname(__FILE__), '../vendor/*/lib')].each do |path|
-  $LOAD_PATH.unshift path
-end
-
 require 'active_record'
 require 'after_commit'
 require 'yaml'
 require 'cgi'
+require 'riddle'
 
+require 'thinking_sphinx/auto_version'
 require 'thinking_sphinx/core/array'
 require 'thinking_sphinx/core/string'
 require 'thinking_sphinx/property'
@@ -14,6 +12,7 @@ require 'thinking_sphinx/active_record'
 require 'thinking_sphinx/association'
 require 'thinking_sphinx/attribute'
 require 'thinking_sphinx/configuration'
+require 'thinking_sphinx/context'
 require 'thinking_sphinx/excerpter'
 require 'thinking_sphinx/facet'
 require 'thinking_sphinx/class_facet'
@@ -56,26 +55,39 @@ module ThinkingSphinx
   # @return [String] The version number as a string
   # 
   def self.version
-    hash = YAML.load_file File.join(File.dirname(__FILE__), '../VERSION.yml')
-    [hash[:major], hash[:minor], hash[:patch]].join('.')
+    open(File.join(File.dirname(__FILE__), '../VERSION')) { |f|
+      f.read.strip
+    }
   end
   
   # The collection of indexed models. Keep in mind that Rails lazily loads
   # its classes, so this may not actually be populated with _all_ the models
   # that have Sphinx indexes.
-  def self.indexed_models
-    @@indexed_models ||= []
+  def self.context
+    if Thread.current[:thinking_sphinx_context].nil?
+      Thread.current[:thinking_sphinx_context] = ThinkingSphinx::Context.new
+      Thread.current[:thinking_sphinx_context].prepare
+    end
+    
+    Thread.current[:thinking_sphinx_context]
+  end
+  
+  def self.reset_context!
+    Thread.current[:thinking_sphinx_context] = nil
   end
 
   def self.unique_id_expression(offset = nil)
-    "* #{ThinkingSphinx.indexed_models.size} + #{offset || 0}"
+    "* #{context.indexed_models.size} + #{offset || 0}"
   end
 
   # Check if index definition is disabled.
   #
   def self.define_indexes?
-    @@define_indexes =  true unless defined?(@@define_indexes)
-    @@define_indexes == true
+    if Thread.current[:thinking_sphinx_define_indexes].nil?
+      Thread.current[:thinking_sphinx_define_indexes] = true
+    end
+    
+    Thread.current[:thinking_sphinx_define_indexes]
   end
 
   # Enable/disable indexes - you may want to do this while migrating data.
@@ -83,16 +95,19 @@ module ThinkingSphinx
   #   ThinkingSphinx.define_indexes = false
   #
   def self.define_indexes=(value)
-    @@define_indexes = value
+    Thread.current[:thinking_sphinx_define_indexes] = value
   end
-
-  @@deltas_enabled = nil
 
   # Check if delta indexing is enabled.
   #
   def self.deltas_enabled?
-    @@deltas_enabled  = (ThinkingSphinx::Configuration.environment != 'test') if @@deltas_enabled.nil?
-    @@deltas_enabled
+    if Thread.current[:thinking_sphinx_deltas_enabled].nil?
+      Thread.current[:thinking_sphinx_deltas_enabled] = (
+        ThinkingSphinx::Configuration.environment != "test"
+      )
+    end
+    
+    Thread.current[:thinking_sphinx_deltas_enabled]
   end
 
   # Enable/disable all delta indexing.
@@ -100,17 +115,20 @@ module ThinkingSphinx
   #   ThinkingSphinx.deltas_enabled = false
   #
   def self.deltas_enabled=(value)
-    @@deltas_enabled = value
+    Thread.current[:thinking_sphinx_deltas_enabled] = value
   end
-
-  @@updates_enabled = nil
 
   # Check if updates are enabled. True by default, unless within the test
   # environment.
   #
   def self.updates_enabled?
-    @@updates_enabled  = (ThinkingSphinx::Configuration.environment != 'test') if @@updates_enabled.nil?
-    @@updates_enabled
+    if Thread.current[:thinking_sphinx_updates_enabled].nil?
+      Thread.current[:thinking_sphinx_updates_enabled] = (
+        ThinkingSphinx::Configuration.environment != "test"
+      )
+    end
+    
+    Thread.current[:thinking_sphinx_updates_enabled]
   end
 
   # Enable/disable updates to Sphinx
@@ -118,38 +136,37 @@ module ThinkingSphinx
   #   ThinkingSphinx.updates_enabled = false
   #
   def self.updates_enabled=(value)
-    @@updates_enabled = value
+    Thread.current[:thinking_sphinx_updates_enabled] = value
   end
 
-  @@suppress_delta_output = false
-
   def self.suppress_delta_output?
-    @@suppress_delta_output
+    Thread.current[:thinking_sphinx_suppress_delta_output] ||= false
   end
 
   def self.suppress_delta_output=(value)
-    @@suppress_delta_output = value
+    Thread.current[:thinking_sphinx_suppress_delta_output] = value
   end
   
-  @@use_group_by_shortcut = nil
   # Checks to see if MySQL will allow simplistic GROUP BY statements. If not,
   # or if not using MySQL, this will return false.
   #
   def self.use_group_by_shortcut?
-    @@use_group_by_shortcut ||= !!(
-      mysql? && ::ActiveRecord::Base.connection.select_all(
-        "SELECT @@global.sql_mode, @@session.sql_mode;"
-      ).all? { |key,value| value.nil? || value[/ONLY_FULL_GROUP_BY/].nil? }
-    )
+    if Thread.current[:thinking_sphinx_use_group_by_shortcut].nil?
+      Thread.current[:thinking_sphinx_use_group_by_shortcut] = !!(
+        mysql? && ::ActiveRecord::Base.connection.select_all(
+          "SELECT @@global.sql_mode, @@session.sql_mode;"
+        ).all? { |key,value| value.nil? || value[/ONLY_FULL_GROUP_BY/].nil? }
+      )
+    end
+    
+    Thread.current[:thinking_sphinx_use_group_by_shortcut]
   end
-
-  @@remote_sphinx = false
 
   # An indication of whether Sphinx is running on a remote machine instead of
   # the same machine.
   #
   def self.remote_sphinx?
-    @@remote_sphinx
+    Thread.current[:thinking_sphinx_remote_sphinx] ||= false
   end
 
   # Tells Thinking Sphinx that Sphinx is running on a different machine, and
@@ -161,7 +178,7 @@ module ThinkingSphinx
   #   ThinkingSphinx.remote_sphinx = true
   #
   def self.remote_sphinx=(value)
-    @@remote_sphinx = value
+    Thread.current[:thinking_sphinx_remote_sphinx] = value
   end
 
   # Check if Sphinx is running. If remote_sphinx is set to true (indicating
@@ -210,3 +227,5 @@ module ThinkingSphinx
   
   extend ThinkingSphinx::SearchMethods::ClassMethods
 end
+
+ThinkingSphinx::AutoVersion.detect

@@ -14,7 +14,7 @@ module ThinkingSphinx
       kind_of? member? method methods nil? object_id respond_to? send should
       type )
     SafeMethods = %w( partition private_methods protected_methods
-      public_methods send )
+      public_methods send class )
     
     instance_methods.select { |method|
       method.to_s[/^__/].nil? && !CoreMethods.include?(method.to_s)
@@ -57,7 +57,19 @@ module ThinkingSphinx
       ThinkingSphinx.facets *args
     end
     
+    def self.matching_fields(fields, bitmask)
+      matches   = []
+      bitstring = bitmask.to_s(2).rjust(32, '0').reverse
+      
+      fields.each_with_index do |field, index|
+        matches << field if bitstring[index, 1] == '1'
+      end
+      matches
+    end
+    
     def initialize(*args)
+      ThinkingSphinx.context.define_indexes
+      
       @array    = []
       @options  = args.extract_options!
       @args     = args
@@ -90,6 +102,8 @@ module ThinkingSphinx
       if is_scope?(method)
         add_scope(method, *args, &block)
         return self
+      elsif method == :search_count
+        return scoped_count
       elsif method.to_s[/^each_with_.*/].nil? && !@array.respond_to?(method)
         super
       elsif !SafeMethods.include?(method.to_s)
@@ -146,7 +160,9 @@ module ThinkingSphinx
     # @return [Integer]
     # 
     def per_page
-      @options[:limit] || @options[:per_page] || 20
+      @options[:limit] ||= @options[:per_page]
+      @options[:limit] ||= 20
+      @options[:limit].to_i
     end
     
     # The total number of pages available if the results are paginated.
@@ -155,6 +171,8 @@ module ThinkingSphinx
     # 
     def total_pages
       populate
+      return 0 if @results[:total].nil?
+      
       @total_pages ||= (@results[:total] / per_page.to_f).ceil
     end
     # Compatibility with older versions of will_paginate
@@ -166,15 +184,18 @@ module ThinkingSphinx
     # 
     def total_entries
       populate
+      return 0 if @results[:total_found].nil?
+      
       @total_entries ||= @results[:total_found]
     end
     
     # The current page's offset, based on the number of records per page.
+    # Or explicit :offset if given. 
     # 
     # @return [Integer]
     # 
     def offset
-      (current_page - 1) * per_page
+      @options[:offset] || ((current_page - 1) * per_page)
     end
     
     def indexes
@@ -215,6 +236,7 @@ module ThinkingSphinx
     end
     
     def search(*args)
+      add_default_scope
       merge_search ThinkingSphinx::Search.new(*args)
       self
     end
@@ -231,8 +253,12 @@ module ThinkingSphinx
       
       retry_on_stale_index do
         begin
-          log "Querying Sphinx: #{query}"
-          @results = client.query query, indexes, comment
+          log "Querying: '#{query}'"
+          runtime = Benchmark.realtime {
+            @results = client.query query, indexes, comment
+          }
+          log "Found #{@results[:total_found]} results", :debug,
+            "Sphinx (#{sprintf("%f", runtime)}s)"
         rescue Errno::ECONNREFUSED => err
           raise ThinkingSphinx::ConnectionError,
             'Connection to Sphinx Daemon (searchd) failed.'
@@ -246,6 +272,7 @@ module ThinkingSphinx
           replace instances_from_matches
           add_excerpter
           add_sphinx_attributes
+          add_matching_fields if client.rank_mode == :fieldmask
         end
       end
     end
@@ -267,11 +294,7 @@ module ThinkingSphinx
       each do |object|
         next if object.nil? || object.respond_to?(:sphinx_attributes)
         
-        match = @results[:matches].detect { |match|
-          match[:attributes]['sphinx_internal_id'] == object.
-            primary_key_for_sphinx &&
-          match[:attributes]['class_crc'] == object.class.to_crc32
-        }
+        match = match_hash object
         next if match.nil?
         
         object.metaclass.instance_eval do
@@ -280,13 +303,40 @@ module ThinkingSphinx
       end
     end
     
-    def self.log(message, method = :debug)
-      return if ::ActiveRecord::Base.logger.nil?
-      ::ActiveRecord::Base.logger.send method, message
+    def add_matching_fields
+      each do |object|
+        next if object.nil? || object.respond_to?(:matching_fields)
+        
+        match = match_hash object
+        next if match.nil?
+        fields = ThinkingSphinx::Search.matching_fields(
+          @results[:fields], match[:weight]
+        )
+        
+        object.metaclass.instance_eval do
+          define_method(:matching_fields) { fields }
+        end
+      end
     end
     
-    def log(message, method = :debug)
-      self.class.log(message, method)
+    def match_hash(object)
+      @results[:matches].detect { |match|
+        match[:attributes]['sphinx_internal_id'] == object.
+          primary_key_for_sphinx &&
+        match[:attributes]['class_crc'] == object.class.to_crc32
+      }
+    end
+    
+    def self.log(message, method = :debug, identifier = 'Sphinx')
+      return if ::ActiveRecord::Base.logger.nil?
+      identifier_color, message_color = "4;32;1", "0" # 0;1 = Bold
+      info = "  \e[#{identifier_color}m#{identifier}\e[0m   "
+      info << "\e[#{message_color}m#{message}\e[0m"
+      ::ActiveRecord::Base.logger.send method, info
+    end
+    
+    def log(*args)
+      self.class.log(*args)
     end
     
     def client
@@ -300,11 +350,12 @@ module ThinkingSphinx
         :group_distinct, :id_range, :cut_off, :retry_count, :retry_delay,
         :rank_mode, :max_query_time, :field_weights
       ].each do |key|
-        # puts "key: #{key}"
         value = options[key] || index_options[key]
-        # puts "value: #{value.inspect}"
         client.send("#{key}=", value) if value
       end
+
+      # treated non-standard as :select is already used for AR queries
+      client.select = options[:sphinx_select] || '*'
       
       client.limit      = per_page
       client.offset     = offset
@@ -684,6 +735,11 @@ MSG
       one_class && one_class.sphinx_scopes.include?(method)
     end
     
+    # Adds the default_sphinx_scope if set.
+    def add_default_scope
+      add_scope(one_class.get_default_sphinx_scope) if one_class && one_class.has_default_sphinx_scope?
+    end
+    
     def add_scope(method, *args, &block)
       merge_search one_class.send(method, *args, &block)
     end
@@ -703,6 +759,17 @@ MSG
           options[key] = search.options[key]
         end
       end
+    end
+    
+    def scoped_count
+      return self.total_entries if @options[:ids_only]
+      
+      @options[:ids_only] = true
+      results_count = self.total_entries
+      @options[:ids_only] = false
+      @populated = false
+      
+      results_count
     end
   end
 end

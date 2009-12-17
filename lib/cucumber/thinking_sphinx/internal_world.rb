@@ -79,11 +79,11 @@ module Cucumber
       
       def database_settings
         {
-          :adapter  => @adapter,
-          :database => @database,
-          :username => @username,
-          :password => @password,
-          :host     => @host
+          'adapter'  => @adapter,
+          'database' => @database,
+          'username' => @username,
+          'password' => @password,
+          'host'     => @host
         }.merge yaml_database_settings
       end
       
@@ -108,7 +108,8 @@ module Cucumber
       end
       
       def load_files(path)
-        Dir["#{path}/*.rb"].each do |file|
+        files = Dir["#{path}/*.rb"].sort!
+        files.each do |file|
           require file.gsub(/\.rb$/, '')
         end
       end
