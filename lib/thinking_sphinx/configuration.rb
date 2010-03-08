@@ -68,6 +68,7 @@ module ThinkingSphinx
       :app_root, :model_directories, :delayed_job_priority
     
     attr_accessor :source_options, :index_options
+    attr_accessor :version
     
     attr_reader :environment, :configuration, :controller
     
@@ -93,8 +94,6 @@ module ThinkingSphinx
       end
       
       @configuration = Riddle::Configuration.new
-      @configuration.searchd.address    = "127.0.0.1"
-      @configuration.searchd.port       = 9312
       @configuration.searchd.pid_file   = "#{self.app_root}/log/searchd.#{environment}.pid"
       @configuration.searchd.log        = "#{self.app_root}/log/searchd.log"
       @configuration.searchd.query_log  = "#{self.app_root}/log/searchd.query.log"
@@ -102,6 +101,8 @@ module ThinkingSphinx
       @controller = Riddle::Controller.new @configuration,
         "#{self.app_root}/config/#{environment}.sphinx.conf"
       
+      self.address              = "127.0.0.1"
+      self.port                 = 9312
       self.database_yml_file    = "#{self.app_root}/config/database.yml"
       self.searchd_file_path    = "#{self.app_root}/db/sphinx/#{environment}"
       self.allow_star           = false
@@ -114,15 +115,23 @@ module ThinkingSphinx
         :charset_type => "utf-8"
       }
       
+      self.version = nil
       parse_config
+      self.version ||= @controller.sphinx_version
       
       self
     end
     
     def self.environment
-      Thread.current[:thinking_sphinx_environment] ||= (
-        defined?(Merb) ? Merb.environment : ENV['RAILS_ENV']
-      ) || "development"
+      Thread.current[:thinking_sphinx_environment] ||= begin
+        if defined?(Merb)
+          Merb.environment
+        elsif defined?(RAILS_ENV)
+          RAILS_ENV
+        else
+          ENV['RAILS_ENV'] || 'development'
+        end
+      end
     end
     
     def environment
@@ -150,18 +159,20 @@ module ThinkingSphinx
     end
     
     def address
-      @configuration.searchd.address
+      @address
     end
     
     def address=(address)
+      @address = address
       @configuration.searchd.address = address
     end
     
     def port
-      @configuration.searchd.port
+      @port
     end
     
     def port=(port)
+      @port = port
       @configuration.searchd.port = port
     end
     

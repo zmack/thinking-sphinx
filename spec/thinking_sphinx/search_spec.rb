@@ -43,7 +43,12 @@ describe ThinkingSphinx::Search do
     
     it "should be true once the client request has been made" do
       @search.first
-      @search.populated?.should be_true
+      @search.should be_populated
+    end
+    
+    it "should be populated if :populate is set to true" do
+      search = ThinkingSphinx::Search.new(:populate => true)
+      search.should be_populated
     end
   end
   
@@ -1170,6 +1175,26 @@ describe ThinkingSphinx::Search do
       @client.filters.detect { |filter|
         filter.attribute == 'int'
       }.should_not be_nil
+    end
+  end
+  
+  describe '#freeze' do
+    before :each do
+      @search = ThinkingSphinx::Search.new
+    end
+    
+    it "should populate the result set" do
+      @search.freeze
+      @search.should be_populated
+    end
+    
+    it "should freeze the underlying array" do
+      @search.freeze
+      @search.to_a.should be_frozen
+    end
+    
+    it "should return the Search object" do
+      @search.freeze.should be_a(ThinkingSphinx::Search)
     end
   end
 end

@@ -73,11 +73,19 @@ module ThinkingSphinx
       @array    = []
       @options  = args.extract_options!
       @args     = args
+      
+      populate if @options[:populate]
     end
     
     def to_a
       populate
       @array
+    end
+    
+    def freeze
+      populate
+      @array.freeze
+      self
     end
     
     # Indication of whether the request has been made to Sphinx for the search
@@ -123,8 +131,8 @@ module ThinkingSphinx
     # @param [Symbol] method The method name
     # @return [Boolean] true if either Search or Array responds to the method.
     # 
-    def respond_to?(method)
-      super || @array.respond_to?(method)
+    def respond_to?(method, include_private = false)
+      super || @array.respond_to?(method, include_private)
     end
     
     # The current page number of the result set. Defaults to 1 if no page was

@@ -21,7 +21,13 @@ describe 'ThinkingSphinx::ActiveRecord::HasManyAssociation' do
       end
       
       @person.friendships.search "test"
-    end    
+    end
+    
+    it "should define indexes for the reflection class" do
+      Friendship.should_receive(:define_indexes)
+      
+      @person.friendships.search 'test'
+    end
   end
   
   describe "search method for has_many :through" do
@@ -44,6 +50,22 @@ describe 'ThinkingSphinx::ActiveRecord::HasManyAssociation' do
       end
       
       @person.friends.search "test"
+    end
+  end
+  
+  describe 'filtering sphinx scopes' do
+    before :each do
+      Friendship.stub!(:search => Friendship)
+      
+      @person = Person.find(:first)
+    end
+    
+    it "should add a filter for the attribute in a sphinx scope call" do
+      Friendship.should_receive(:search).with do |options|
+        options[:with][:person_id].should == @person.id
+      end
+      
+      @person.friendships.reverse
     end
   end
 end
