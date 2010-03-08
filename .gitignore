@@ -6,3 +6,5 @@ rdoc
 database.yml
 tmp
 *.gem
+.yardoc
+doc/*
